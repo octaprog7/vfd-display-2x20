@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vfd-display-2x20"
+version = "1.0.0"
+description = "A Python library for controlling 2x20 VFD customer displays using EPSON protocol under Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "octaprog7" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Hardware :: Hardware Drivers"
+]
+dependencies = [
+    "pyserial>=3.5"
+]
+
+[project.urls]
+Homepage = "https://github.com"
