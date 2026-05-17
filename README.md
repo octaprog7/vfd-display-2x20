@@ -108,7 +108,7 @@ except Exception as e:
 ## Порт подключения
 1. Дисплей покупателя (ДП) ОТКЛЮЧЕН от ПК.
 2. В консоли вводите команду: ls /dev/tty*
-3. Получаете: 
+3. Результат выполнения команды: 
 ```console
 /dev/tty    /dev/tty19  /dev/tty3   /dev/tty40  /dev/tty51  /dev/tty62
 /dev/tty0   /dev/tty2   /dev/tty30  /dev/tty41  /dev/tty52  /dev/tty63
@@ -125,7 +125,7 @@ except Exception as e:
 ```
 4. Подключаете ДП в разъем USB ПК.
 5. В консоли вводите команду: ls /dev/tty*
-6. Получаете: 
+6. Результат выполнения команды: 
 ```console
 /dev/tty    /dev/tty19  /dev/tty3   /dev/tty40  /dev/tty51  /dev/tty62
 /dev/tty0   /dev/tty2   /dev/tty30  /dev/tty41  /dev/tty52  /dev/tty63
@@ -141,4 +141,4 @@ except Exception as e:
 /dev/tty18  /dev/tty29  /dev/tty4   /dev/tty50  /dev/tty61
 ```
 
-Видите разницу. Это и есть имя порта ДП, подключенного к ПК.
+Видите разницу!? Это и есть имя порта ДП, подключенного к ПК.
