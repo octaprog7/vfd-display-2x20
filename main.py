@@ -1,13 +1,18 @@
+# Copyright (c) 2026 Roman Shevchik (octaprog7) <kolbasilyvasily@yandex.ru>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from time import sleep
-from VFDmod import VfdCustomerDisplay, SerialConn
+from VFDmod import VfdCustomerDisplay, SerialConn, autodetect_port
 
 # --- Пример использования ---
 if __name__ == "__main__":
-    # На Debian USB-дисплеи часто садятся на /dev/ttyACM0
-    port = '/dev/ttyUSB0'
+    # Автопоиск порта: Linux — /dev/ttyACM*/ttyUSB*, Windows — COMx
+    port = autodetect_port()
 
     try:
-        with VfdCustomerDisplay(SerialConn(port)) as vfd:
+        # Текст на Русском языке, поэтому задаю кодировку явно, 
+        # initialize() выберет кодировку CP866
+        with VfdCustomerDisplay(SerialConn(port), encoding='cp866') as vfd:
             vfd.initialize()
             vfd.clear()
 
@@ -15,9 +20,9 @@ if __name__ == "__main__":
             vfd[1] = "Сегодня скидка 100%"  # Доступ через индекс (line 2)
 
             # Задержка жизни скрипта, чтобы порт оставался открытым!
-            print("Текст отправлен. Нажмите Ctrl+C для выхода...")
+            print(f"Текст отправлен на {port}. Нажмите Ctrl+C для выхода...")
             while True:
                 sleep(1)
     except Exception as e:
         print(f"\n[!] Ошибка: {e}")
-        print("Проверьте подключение кабеля и права доступа (группа dialout).")
+        print("Проверьте подключение дисплея. В Linux права: группа dialout.")

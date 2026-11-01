@@ -4,17 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vfd-display-2x20"
-version = "1.0.0"
-description = "A Python library for controlling 2x20 VFD customer displays using EPSON protocol under Linux"
+version = "2.0.0"
+description = "A cross-platform Python library for controlling 2x20 VFD customer displays using EPSON protocol (Linux, Windows, macOS)"
+license = { text = "GPL-3.0-or-later" }
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "octaprog7" }
+    { name = "Roman Shevchik (octaprog7)", email = "kolbasilyvasily@yandex.ru" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
     "Topic :: System :: Hardware :: Hardware Drivers"
 ]
 dependencies = [

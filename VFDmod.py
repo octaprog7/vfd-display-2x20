@@ -1,17 +1,32 @@
 """
 Модуль для управления VFD-дисплеями по протоколу EPSON.
-Разработано для Linux (Debian) с использованием интерфейсов TTY (/dev/ttyACM*).
-Требует Python 3.10+ и библиотеку pyserial.
+Операционные Системы (ОС): Linux (/dev/ttyACM*, /dev/ttyUSB*), Windows (COMx), macOS (/dev/tty.usb*).
+Python: Python 3.10+ и библиотеку pyserial.
 Вакуумно-флуоресцентный (VFD - Vacuum Fluorescent Display) дисплей покупателя!
 """
 
+# Copyright (c) 2026 Roman Shevchik (octaprog7) <kolbasilyvasily@yandex.ru>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# <https://www.gnu.org/licenses/gpl-3.0.html>
+
+import os
 import sys
 import locale
 from enum import Enum, auto
 
 
 if not sys.platform.startswith("linux"):
-    print("Предупреждение: Этот драйвер протестирован и предназначен только для Linux.")
+    print("Предупреждение: Драйвер протестирован на Linux. "
+          "На других платформах используйте autodetect_port() или укажите порт вручную (например 'COM3').")
 if sys.version_info < (3, 10):
     sys.exit("Ошибка: Этот проект требует Python 3.10 или выше.")
 
@@ -65,6 +80,43 @@ class SerialConn:
         if not self.is_open:
             raise ConnectionError(f"Порт {self._port} недоступен")
         self._connection.write(data)  # type: ignore
+
+
+def autodetect_port() -> str:
+    """Автоматически определяет последовательный порт подключенного устройства.
+
+    ОС:
+      - Linux:  /dev/ttyACM*, /dev/ttyUSB*;
+      - Windows: COMx (Диспетчер устройств);
+      - macOS:  /dev/tty.usb*.
+
+    :return: Имя порта (например, '/dev/ttyUSB0' или 'COM3').
+    :raises ConnectionError: Если порт не найден.
+    """
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        raise RuntimeError("Библиотека 'serial' не установлена (pip install pyserial).")
+
+    ports = list(list_ports.comports())
+    if not ports:
+        raise ConnectionError("Не найдено ни одного последовательного порта. "
+                              "Проверьте подключение дисплея.")
+
+    if sys.platform.startswith("linux"):
+        # Сначала USB-устройства (ACM — CDC-совместимые, USB — конвертеры)
+        candidates = [p.device for p in ports if "ttyACM" in p.device or "ttyUSB" in p.device]
+    elif sys.platform == "darwin":
+        candidates = [p.device for p in ports if "tty.usb" in p.device]
+    else:
+        # Windows и прочие: беру все COM-порты
+        candidates = [p.device for p in ports]
+
+    if not candidates:
+        # Ничего характерного не нашли — возвращаем первый попавшийся порт
+        candidates = [p.device for p in ports]
+
+    return candidates[0]
 
 
 class POSDisplay:
@@ -234,8 +286,18 @@ class VfdCustomerDisplay(EpsonProtocol):
     CHARSET_EUROPE = 0x02
     CHARSET_CYRILLIC = 0x07
 
+    # Соответствие кодировок Python и CHARSET-кодов дисплея
+    ENCODING_TO_CHARSET: dict[str, int] = {
+        'ascii': CHARSET_USA,
+        'cp437': CHARSET_EUROPE,
+        'cp866': CHARSET_CYRILLIC,
+    }
+
     def __init__(self, connection: SerialConn, encoding: str | None = None):
-        """Настройка геометрии (2x20) и кодировки по умолчанию."""
+        """Настройка геометрии (2x20) и кодировки по умолчанию.
+        :param encoding: Явная кодировка ('cp866', 'cp437', 'ascii').
+                         Если None - определяется по локали ОС в initialize()."""
+        self._explicit_encoding = encoding is not None
         super().__init__(connection, encoding=encoding or self.DEFAULT_ENCODING)
         self._rows, self._cols = 2, 20
         # тип для этой модели
@@ -253,7 +315,8 @@ class VfdCustomerDisplay(EpsonProtocol):
                 case self.CHARSET_EUROPE:
                     encoding = 'cp437'
                 case self.CHARSET_CYRILLIC:
-                    encoding = self._encoding
+                    # Кириллица всегда кодируется в CP866 (не в текущую кодировку!)
+                    encoding = self.DEFAULT_ENCODING
                 case _:
                     raise ValueError(f"Нет автоматической кодировки для CHARSET кода: {code}")
 
@@ -270,28 +333,41 @@ class VfdCustomerDisplay(EpsonProtocol):
 
     def initialize(self) -> None:
         eu_lang = ('de', 'fr', 'es', 'it', 'nl')
-        """Инициализация с принудительной установкой кириллицы."""
+        """Инициализация с выбором набора символов (кириллица/латиница)."""
         super().initialize()
-        # Получаю код языка системы (например, 'ru_RU' или 'en_US')
-        # В Linux (Debian) это переменная окружения LANG
-        try:
-            # попытка получить текущую локаль
-            lang, _ = locale.getlocale()
-        except ValueError:
-            # в ОС задана некорректная локаль
-            lang = None
+        if self._explicit_encoding:
+            # Кодировка задана пользователем явно - синхронизирую набор символов с ней,
+            # игнорирую локаль ОС (для тестов и нестандартных сценариев)
+            target_code = self.ENCODING_TO_CHARSET.get(self._encoding)
+            if target_code is None:
+                raise ValueError(
+                    f"Нет CHARSET-кода для кодировки '{self._encoding}'. "
+                    f"Доступно: {', '.join(self.ENCODING_TO_CHARSET)}")
+        else:
+            # Кодировка не задана - определяю язык системы кроссплатформенно:
+            # Linux/macOS — переменные окружения LANG/LC_ALL,
+            # Windows — locale.getlocale() (например 'Russian_Russia').
+            try:
+                # попытка получить текущую локаль
+                lang, _ = locale.getlocale()
+            except ValueError:
+                # в ОС задана неверная локаль
+                lang = None
+            # Кроссплатформенность: Windows возвращает 'Russian_Russia'/'ru_RU' —
+            # привожу к нижнему регистру. На Linux язык берём из окружения (LANG).
+            lang = (lang or os.environ.get("LC_ALL") or os.environ.get("LANG") or "").lower()
 
-        match lang:
-            case str(l) if l.startswith('ru'):
-                target_code =  self.CHARSET_CYRILLIC
-            case str(l) if l.startswith('en'):
-                target_code = self.CHARSET_USA
-            # евро-префиксы
-            case str(l) if l.startswith(eu_lang):
-                target_code = self.CHARSET_EUROPE
-            case _:
-                #  латиница должна быть на любом POS-дисплее (ASCII)
-                target_code = self.CHARSET_USA
+            match lang:
+                case str(l) if l.startswith('ru'):
+                    target_code =  self.CHARSET_CYRILLIC
+                case str(l) if l.startswith('en'):
+                    target_code = self.CHARSET_USA
+                # евро-префиксы
+                case str(l) if l.startswith(eu_lang):
+                    target_code = self.CHARSET_EUROPE
+                case _:
+                    #  латиница должна быть на любом POS-дисплее (ASCII)
+                    target_code = self.CHARSET_USA
         #
         self.set_charset(code=target_code)
 

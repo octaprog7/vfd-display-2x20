@@ -1,6 +1,9 @@
+# Copyright (c) 2026 Roman Shevchik (octaprog7) <kolbasilyvasily@yandex.ru>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # import sys
 from time import sleep
-from VFDmod import VfdCustomerDisplay, SerialConn
+from VFDmod import VfdCustomerDisplay, SerialConn, autodetect_port
 
 
 def run_diagnostic(vfd: VfdCustomerDisplay):
@@ -51,13 +54,14 @@ def run_diagnostic(vfd: VfdCustomerDisplay):
 
 
 if __name__ == "__main__":
-    # На Debian USB-дисплеи часто садятся на /dev/ttyACM0
-    PORT = '/dev/ttyUSB0'
+    # Автопоиск порта: Linux — /dev/ttyACM*/ttyUSB*, Windows — COMx
+    PORT = autodetect_port()
 
     try:
-        # Передаю SerialConn в конструктор дисплея
-        with VfdCustomerDisplay(SerialConn(PORT)) as display:
+        # Передаю SerialConn в конструктор дисплея.
+        # Кириллица в тестах - задаю кодировку явно, без привязки к локали ОС
+        with VfdCustomerDisplay(SerialConn(PORT), encoding='cp866') as display:
             run_diagnostic(display)
     except Exception as e:
         print(f"\n[!] Ошибка: {e}")
-        print("Проверьте подключение кабеля и права доступа (группа dialout).")
+        print("Проверьте подключение дисплея. В Linux права: группа dialout.")
