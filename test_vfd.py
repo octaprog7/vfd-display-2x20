@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Roman Shevchik (octaprog7) <kolbasilyvasily@yandex.ru>
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Внимание! Не все Дисплеи Покупателя (ДП) имеют аппаратную поддержку изменения яркости и мигания!
 
-# import sys
 from time import sleep
 from VFDmod import VfdCustomerDisplay, SerialConn, autodetect_port
 
@@ -56,7 +56,7 @@ def run_diagnostic(vfd: VfdCustomerDisplay):
 if __name__ == "__main__":
     # Автопоиск порта: Linux — /dev/ttyACM*/ttyUSB*, Windows — COMx
     PORT = autodetect_port()
-
+    print(f"Порт ДП: ", PORT)
     try:
         # Передаю SerialConn в конструктор дисплея.
         # Кириллица в тестах - задаю кодировку явно, без привязки к локали ОС

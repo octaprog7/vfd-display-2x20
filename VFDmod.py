@@ -3,6 +3,7 @@
 Операционные Системы (ОС): Linux (/dev/ttyACM*, /dev/ttyUSB*), Windows (COMx), macOS (/dev/tty.usb*).
 Python: Python 3.10+ и библиотеку pyserial.
 Вакуумно-флуоресцентный (VFD - Vacuum Fluorescent Display) дисплей покупателя!
+Внимание! Не все Дисплеи Покупателя (ДП) имеют аппаратную поддержку изменения яркости и мигания!
 """
 
 # Copyright (c) 2026 Roman Shevchik (octaprog7) <kolbasilyvasily@yandex.ru>
@@ -19,13 +20,14 @@ Python: Python 3.10+ и библиотеку pyserial.
 # <https://www.gnu.org/licenses/gpl-3.0.html>
 
 import os
+import re
 import sys
 import locale
 from enum import Enum, auto
 
 
 if not sys.platform.startswith("linux"):
-    print("Предупреждение: Драйвер протестирован на Linux. "
+    print("Предупреждение: Драйвер протестирован на Linux/Windows. "
           "На других платформах используйте autodetect_port() или укажите порт вручную (например 'COM3').")
 if sys.version_info < (3, 10):
     sys.exit("Ошибка: Этот проект требует Python 3.10 или выше.")
@@ -82,8 +84,39 @@ class SerialConn:
         self._connection.write(data)  # type: ignore
 
 
+# Известные VID:PID USB-serial чипов (дисплеи покупателя и не только)
+_KNOWN_USB_SERIAL_VID_PID = {
+    (0x067B, 0x2303),  # Prolific PL2303 (АТОЛ PD-220 и множество других)
+    (0x1A86, 0x7523),  # WCH CH340 (частый в дешёвых китайских дисплеях)
+    (0x1A86, 0x5523),  # WCH CH341
+    (0x10C4, 0xEA60),  # Silicon Labs CP210x
+    (0x0403, 0x6001),  # FTDI FT232
+    (0x0403, 0x6015),  # FTDI FT231X
+}
+
+
+def _port_is_bluetooth(port) -> bool:
+    """Отсеивает Bluetooth-Serial порты (типичная ловушка на Windows)."""
+    text = f"{port.description} {port.hwid}".lower()
+    return ("bluetooth" in text
+            or "bthenum" in text
+            or "rfcomm" in port.device.lower())
+
+
+def _port_vid_pid(port) -> tuple[int, int] | None:
+    """Извлекает (VID, PID) из hwid: 'USB VID:PID=067B:2303 SER=...'."""
+    match = re.search(r"VID:PID=([0-9A-Fa-f]{4}):([0-9A-Fa-f]{4})", port.hwid or "")
+    return (int(match.group(1), 16), int(match.group(2), 16)) if match else None
+
+
 def autodetect_port() -> str:
-    """Автоматически определяет последовательный порт подключенного устройства.
+    """Автоматически определяет последовательный порт дисплея покупателя.
+
+    Порты проверяются по приоритету:
+      1. USB-порт с известным VID:PID USB-serial чипа (PL2303, CH340, CP210x, FTDI);
+      2. любой USB-порт с VID:PID (кроме Bluetooth!);
+      3. характерные имена портов ОС (Linux ttyACM*/ttyUSB*, macOS tty.usb*);
+      4. любой оставшийся порт, кроме Bluetooth.
 
     ОС:
       - Linux:  /dev/ttyACM*, /dev/ttyUSB*;
@@ -91,7 +124,7 @@ def autodetect_port() -> str:
       - macOS:  /dev/tty.usb*.
 
     :return: Имя порта (например, '/dev/ttyUSB0' или 'COM3').
-    :raises ConnectionError: Если порт не найден.
+    :raises ConnectionError: Если подходящий порт не найден.
     """
     try:
         from serial.tools import list_ports
@@ -103,20 +136,36 @@ def autodetect_port() -> str:
         raise ConnectionError("Не найдено ни одного последовательного порта. "
                               "Проверьте подключение дисплея.")
 
+    # Приоритет 1: известные USB-serial чипы (дисплей почти наверняка на одном из них)
+    known = [p for p in ports
+             if not _port_is_bluetooth(p) and _port_vid_pid(p) in _KNOWN_USB_SERIAL_VID_PID]
+    if known:
+        return known[0].device
+
+    # Приоритет 2: любой USB-порт с VID:PID, исключая Bluetooth
+    usb_ports = [p for p in ports
+                 if not _port_is_bluetooth(p) and _port_vid_pid(p) is not None]
+    if usb_ports:
+        return usb_ports[0].device
+
+    # Приоритет 3: характерные имена портов ОС
     if sys.platform.startswith("linux"):
-        # Сначала USB-устройства (ACM — CDC-совместимые, USB — конвертеры)
-        candidates = [p.device for p in ports if "ttyACM" in p.device or "ttyUSB" in p.device]
+        candidates = [p for p in ports
+                      if not _port_is_bluetooth(p)
+                      and ("ttyACM" in p.device or "ttyUSB" in p.device)]
     elif sys.platform == "darwin":
-        candidates = [p.device for p in ports if "tty.usb" in p.device]
+        candidates = [p for p in ports
+                      if not _port_is_bluetooth(p) and "tty.usb" in p.device]
     else:
-        # Windows и прочие: беру все COM-порты
-        candidates = [p.device for p in ports]
+        candidates = [p for p in ports if not _port_is_bluetooth(p)]
 
-    if not candidates:
-        # Ничего характерного не нашли — возвращаем первый попавшийся порт
-        candidates = [p.device for p in ports]
+    if candidates:
+        return candidates[0].device
 
-    return candidates[0]
+    # Приоритет 4: крайний случай — только Bluetooth-порты
+    raise ConnectionError(
+        "Дисплей не найден. Обнаружены порты (все выглядят как Bluetooth/не-USB): "
+        + ", ".join(f"{p.device} ({p.description})" for p in ports))
 
 
 class POSDisplay:
